@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FirewallManager.ps1</title>
+
+<!-- Fonts: Unbounded (display), Instrument Sans (body), JetBrains Mono (terminal) -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700;900&family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600;800&display=swap" rel="stylesheet">
+
+<style>
+/* ===========================================
+   THEME: "control room": graphite, warm paper text, amber signal
+   =========================================== */
+:root {
+    --stage-bg: #050607;
+    --slide-bg: #0a0c0f;
+    --panel: #12161b;
+    --panel-2: #181d24;
+    --line: #262d37;
+    --text: #efeae0;
+    --muted: #8d95a3;
+    --amber: #ffa41b;
+    --amber-soft: rgba(255, 164, 27, .14);
+    --red: #ff5148;
+    --green: #5ee6a8;
+    --blue: #7db4ff;
+
+    --font-display: 'Unbounded', 'Arial Black', sans-serif;
+    --font-body: 'Instrument Sans', 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', Consolas, monospace;
+
+    --ease: cubic-bezier(0.16, 1, 0.3, 1);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+/* ===========================================
+   FIXED 16:9 STAGE: MANDATORY BASE STYLES (viewport-base.css)
+   =========================================== */
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--stage-bg, #000); }
+.deck-stage { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; overflow: hidden; transform-origin: 0 0; background: var(--slide-bg, #fff); }
+.slide { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: hidden; display: block; visibility: hidden; opacity: 0; pointer-events: none; background: var(--slide-bg, #fff); }
+.slide.active, .slide.visible { visibility: visible; opacity: 1; pointer-events: auto; z-index: 1; }
+img, video, canvas, svg { max-width: 100%; max-height: 100%; }
+.deck-controls { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 1000; }
+@media print {
+    html, body { width: 1920px; height: auto; overflow: visible; background: #fff; }
+    .deck-viewport { position: static; overflow: visible; background: #fff; }
+    .deck-stage { position: static; width: auto; height: auto; transform: none !important; background: none; }
+    .slide { position: relative; display: block !important; visibility: visible !important; opacity: 1 !important; pointer-events: auto !important; width: 1920px; height: 1080px; break-after: page; page-break-after: always; }
+    .slide:last-child { break-after: auto; page-break-after: auto; }
+    .deck-controls { display: none !important; }
+    .reveal, .frag { opacity: 1 !important; transform: none !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.2s !important; }
+}
+
+/* ===========================================
+   SLIDE ATMOSPHERE: grid + glow + scanlines
+   =========================================== */
+.slide {
+    font-family: var(--font-body);
+    color: var(--text);
+    background:
+        radial-gradient(ellipse 900px 600px at 88% 8%, rgba(255, 164, 27, .10), transparent 70%),
+        radial-gradient(ellipse 800px 500px at 5% 100%, rgba(125, 180, 255, .07), transparent 70%),
+        linear-gradient(rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 60px 60px,
+        linear-gradient(90deg, rgba(255,255,255,.028) 1px, transparent 1px) 0 0 / 60px 60px,
+        var(--slide-bg);
+}
+.slide::after { /* scanlines */
+    content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.14) 0 1px, transparent 1px 4px);
+    mix-blend-mode: multiply; opacity: .55;
+}
+.pad { position: absolute; inset: 0; padding: 96px 120px; display: flex; flex-direction: column; z-index: 2; }
+.eyebrow { font-family: var(--font-mono); font-size: 26px; letter-spacing: .22em; text-transform: uppercase; color: var(--amber); margin-bottom: 28px; display: flex; align-items: center; gap: 18px; }
+.eyebrow::before { content: ""; width: 56px; height: 3px; background: var(--amber); }
+h1, h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: -.02em; line-height: 1.08; }
+h2 { font-size: 78px; max-width: 1500px; }
+h2 em, h1 em { font-style: normal; color: var(--amber); }
+.lead { font-size: 38px; line-height: 1.45; color: var(--muted); max-width: 1300px; margin-top: 30px; }
+.lead b { color: var(--text); font-weight: 600; }
+code, .mono { font-family: var(--font-mono); }
+.num { position: absolute; right: 120px; top: 96px; font-family: var(--font-mono); font-size: 24px; color: var(--muted); letter-spacing: .12em; z-index: 3; }
+
+/* ===========================================
+   ANIMATION: .reveal on active slide, .frag = click-to-reveal steps
+   =========================================== */
+.reveal { opacity: 0; transform: translateY(34px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+.slide.visible .reveal { opacity: 1; transform: none; }
+.slide.visible .reveal:nth-child(1) { transition-delay: .05s; }
+.slide.visible .reveal:nth-child(2) { transition-delay: .16s; }
+.slide.visible .reveal:nth-child(3) { transition-delay: .27s; }
+.slide.visible .reveal:nth-child(4) { transition-delay: .38s; }
+.slide.visible .reveal:nth-child(5) { transition-delay: .49s; }
+.frag { opacity: 0; transform: translateY(22px); transition: opacity .5s var(--ease), transform .5s var(--ease); }
+.frag.shown, .slide:not([data-steps]) .frag { opacity: 1; transform: none; }
+
+/* ===========================================
+   COMPONENTS
+   =========================================== */
+.tag { display: inline-block; font-family: var(--font-mono); font-weight: 600; font-size: 24px; padding: 6px 18px; border-radius: 6px; background: var(--amber); color: #1a1100; letter-spacing: .04em; }
+.tag.red { background: var(--red); color: #2a0402; }
+.tag.green { background: var(--green); color: #052415; }
+.tag.ghost { background: transparent; border: 2px solid var(--line); color: var(--muted); }
+
+.terminal { background: #07090c; border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 30px 80px rgba(0,0,0,.5), 0 0 0 1px rgba(255,164,27,.05); overflow: hidden; }
+.terminal .bar { display: flex; gap: 12px; align-items: center; padding: 16px 22px; background: var(--panel); border-bottom: 1px solid var(--line); font-family: var(--font-mono); font-size: 22px; color: var(--muted); }
+.terminal .bar i { width: 14px; height: 14px; border-radius: 50%; background: #3a424e; }
+.terminal .bar i:nth-child(1) { background: #ff5f57; } .terminal .bar i:nth-child(2) { background: #febc2e; } .terminal .bar i:nth-child(3) { background: #28c840; }
+.terminal .bar span { margin-left: 14px; }
+.terminal pre { font-family: var(--font-mono); font-size: 34px; line-height: 1.62; padding: 34px 40px; color: #d9d4c7; white-space: pre-wrap; }
+.p { color: var(--amber); } .ok { color: var(--green); } .er { color: var(--red); } .dim { color: var(--muted); } .bl { color: var(--blue); }
+
+.cards { display: grid; gap: 32px; }
+.card { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line); border-radius: 20px; padding: 40px 38px; position: relative; overflow: hidden; }
+.card::before { content: ""; position: absolute; left: 0; top: 0; width: 100%; height: 4px; background: var(--amber); transform-origin: left; }
+.card h3 { font-family: var(--font-display); font-size: 40px; font-weight: 700; margin-bottom: 16px; }
+.card p { font-size: 30px; line-height: 1.45; color: var(--muted); }
+.card .ico { font-family: var(--font-mono); font-size: 26px; color: var(--amber); margin-bottom: 22px; letter-spacing: .1em; }
+
+table { border-collapse: collapse; width: 100%; font-family: var(--font-mono); font-size: 28px; }
+th { text-align: left; color: var(--amber); font-weight: 600; font-size: 22px; letter-spacing: .14em; text-transform: uppercase; padding: 16px 22px; border-bottom: 2px solid var(--line); }
+td { padding: 22px; border-bottom: 1px solid var(--line); color: #d9d4c7; }
+tr.hl td { background: var(--amber-soft); color: var(--text); }
+
+/* ===========================================
+   SLIDE-SPECIFIC
+   =========================================== */
+/* Title */
+.title-slide .pad { justify-content: center; }
+.title-slide h1 { font-size: 168px; line-height: .98; }
+.title-slide .sub { font-size: 44px; color: var(--muted); margin-top: 40px; max-width: 1200px; line-height: 1.4; }
+.title-slide .sub b { color: var(--text); font-weight: 600; }
+.title-slide .meta { position: absolute; left: 120px; bottom: 90px; display: flex; gap: 20px; }
+.cursor { display: inline-block; width: .5em; height: .09em; background: var(--amber); margin-left: .15em; animation: blink 1s steps(1) infinite; vertical-align: baseline; }
+@keyframes blink { 50% { opacity: 0; } }
+.shield { position: absolute; right: 150px; top: 50%; width: 560px; height: 560px; margin-top: -280px; z-index: 2; }
+.shield .ring { transform-origin: center; animation: spin 40s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes dash { to { stroke-dashoffset: -60; } }
+
+/* Problem: big statements */
+.statements { display: grid; gap: 0; margin-top: 56px; }
+.statement { display: grid; grid-template-columns: 120px 1fr; align-items: baseline; padding: 30px 0; border-top: 1px solid var(--line); }
+.statement:last-child { border-bottom: 1px solid var(--line); }
+.statement .n { font-family: var(--font-mono); font-size: 34px; color: var(--amber); }
+.statement p { font-size: 52px; font-weight: 500; line-height: 1.2; }
+.statement p span { color: var(--muted); }
+
+/* Verbs */
+.cards.four { grid-template-columns: repeat(4, 1fr); margin-top: 70px; }
+.cards.four .card { min-height: 640px; }
+.cards.four .card p { font-size: 34px; }
+
+/* Architecture */
+.arch { margin-top: 40px; display: grid; grid-template-columns: 1fr 1fr; gap: 22px; }
+.layer { background: var(--panel); border: 1px solid var(--line); border-left: 6px solid var(--amber); border-radius: 14px; padding: 24px 32px; display: flex; flex-direction: column; gap: 10px; }
+.layer b { font-family: var(--font-display); font-size: 34px; }
+.layer span { font-family: var(--font-mono); font-size: 26px; color: var(--muted); line-height: 1.4; }
+.layer.wide { grid-column: 1 / -1; border-left-color: var(--green); }
+
+/* SSH hero visual */
+.vmid { margin-top: auto !important; margin-bottom: auto; }
+.net { position: relative; height: 380px; }
+.node { position: absolute; top: 90px; width: 400px; height: 200px; background: var(--panel-2); border: 2px solid var(--line); border-radius: 20px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 10px; }
+.node.a { left: 0; } .node.b { right: 0; }
+.node b { font-family: var(--font-display); font-size: 30px; }
+.node span { font-family: var(--font-mono); font-size: 26px; color: var(--muted); }
+.wire { position: absolute; left: 400px; right: 400px; top: 190px; height: 0; border-top: 6px solid var(--green); transition: border-color .4s; }
+.wire .pkt { position: absolute; top: -14px; width: 22px; height: 22px; border-radius: 50%; background: var(--green); box-shadow: 0 0 18px var(--green); animation: flow 2.2s linear infinite; }
+.wire .pkt:nth-child(2) { animation-delay: .7s; } .wire .pkt:nth-child(3) { animation-delay: 1.4s; }
+@keyframes flow { from { left: 0; } to { left: calc(100% - 22px); } }
+.net.blocked .wire { border-top-style: dashed; border-color: var(--red); }
+.net.blocked .wire .pkt { animation-play-state: paused; opacity: 0; background: var(--red); box-shadow: 0 0 18px var(--red); }
+.gate { position: absolute; left: 50%; top: 100px; width: 120px; height: 180px; margin-left: -60px; border: 4px solid var(--amber); border-radius: 14px; background: rgba(255,164,27,.12); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 24px; color: var(--amber); text-align: center; line-height: 1.3; transform: scale(.6); opacity: 0; transition: all .5s var(--ease); }
+.net.armed .gate { transform: none; opacity: 1; }
+.gate .lbl { transition: opacity .25s; }
+.gate .x { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-family: var(--font-display); font-size: 84px; line-height: 1; color: var(--red); opacity: 0; transform: scale(2); transition: all .35s var(--ease); }
+.net.blocked .gate .lbl { opacity: 0; }
+.net.blocked .gate .x { opacity: 1; transform: none; }
+.net.blocked .gate { border-color: var(--red); background: rgba(255,81,72,.12); }
+.cards.lg .card { min-height: 400px; padding: 48px 44px; }
+.cards.lg .card p { font-size: 34px; }
+.net.blocked .node.b { border-color: var(--red); }
+.status { margin-top: 10px; font-family: var(--font-mono); font-size: 32px; min-height: 48px; }
+
+/* Drift */
+.rules { margin-top: 52px; display: grid; gap: 22px; }
+.rule { display: grid; grid-template-columns: 1fr 260px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 24px 34px; font-family: var(--font-mono); font-size: 32px; }
+.rule small { display: block; color: var(--muted); font-size: 24px; margin-top: 6px; }
+.switch { justify-self: end; padding: 10px 28px; border-radius: 99px; font-weight: 600; font-size: 26px; transition: all .4s; background: rgba(94,230,168,.15); color: var(--green); border: 2px solid var(--green); }
+.rule.off .switch { background: rgba(255,81,72,.15); color: var(--red); border-color: var(--red); }
+.rule.off { border-color: var(--red); }
+.rule.fixed .switch::after { content: "  ✓"; }
+
+/* Stats */
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 36px; margin-top: 90px; }
+.stat { border-top: 4px solid var(--amber); padding-top: 26px; }
+.stat b { font-family: var(--font-display); font-size: 150px; line-height: 1; display: block; }
+.stat span { font-size: 30px; color: var(--muted); display: block; margin-top: 16px; line-height: 1.35; }
+
+/* JSON highlighting */
+.k { color: var(--blue); } .s { color: var(--green); } .n2 { color: var(--amber); }
+
+/* ===========================================
+   DECK CHROME (outside the stage)
+   =========================================== */
+#progress { position: fixed; left: 0; top: 0; height: 5px; background: var(--amber); width: 0; z-index: 2000; transition: width .35s var(--ease); box-shadow: 0 0 14px var(--amber); }
+.deck-controls { display: flex; gap: 10px; align-items: center; padding: 8px 14px; border-radius: 99px; background: rgba(18,22,27,.82); backdrop-filter: blur(8px); border: 1px solid var(--line); font-family: var(--font-mono); font-size: 14px; color: var(--muted); opacity: .0; transition: opacity .3s; }
+body:hover .deck-controls, body.show-controls .deck-controls, .deck-controls:focus-within { opacity: 1; }
+.deck-controls button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 99px; color: var(--text); }
+.deck-controls button:hover { background: var(--amber); color: #1a1100; }
+.deck-controls kbd { padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; }
+#overview { position: fixed; inset: 0; z-index: 3000; background: rgba(5,6,7,.96); display: none; padding: 40px; overflow: auto; }
+#overview.open { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 22px; align-content: start; }
+#overview .thumb { position: relative; aspect-ratio: 16/9; border: 2px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); padding: 16px; cursor: pointer; font-family: var(--font-body); overflow: hidden; }
+#overview .thumb:hover, #overview .thumb.cur { border-color: var(--amber); }
+#overview .thumb b { display: block; color: var(--amber); font-family: var(--font-mono); font-size: 14px; margin-bottom: 8px; }
+#overview .thumb span { font-size: 18px; line-height: 1.25; }
+.editing [contenteditable="true"] { outline: 2px dashed var(--amber); outline-offset: 6px; }
+.edit-toggle { all: unset; position: fixed; left: 14px; top: 14px; z-index: 4000; cursor: pointer; padding: 8px 14px; border-radius: 8px; background: var(--amber); color: #1a1100; font: 600 14px var(--font-mono); opacity: 0; pointer-events: none; transition: opacity .3s; }
+.edit-toggle.show, .editing .edit-toggle { opacity: 1; pointer-events: auto; }
+button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+.edit-hotzone { position: fixed; left: 0; top: 0; width: 80px; height: 80px; z-index: 3900; }
+</style>
+</head>
+<body>
+<div id="progress"></div>
+<div class="edit-hotzone"></div>
+<button class="edit-toggle" id="editToggle" title="Tryb edycji (E)">✎ edycja · Ctrl+S zapisuje</button>
+
+<div class="deck-viewport">
+<main class="deck-stage" id="deckStage">
+
+<!-- ================= 01 TITLE ================= -->
+<section class="slide title-slide" data-title="Tytuł">
+  <div class="pad">
+    <div class="eyebrow reveal">Projekt · PowerShell · Zapora Windows</div>
+    <h1 class="reveal">Firewall<br><em>Manager</em><span class="cursor"></span></h1>
+    <p class="sub reveal"><b>Zarządzanie Zaporą Windows w PowerShell:</b><br>blokowanie portów i adresów, naprawa konfiguracji, audyt zmian.</p>
+    <div class="meta reveal"><span class="tag">PS 5.1 + 7</span><span class="tag ghost">Windows 10/11 · Server 2016+</span></div>
+  </div>
+  <svg class="shield reveal" viewBox="0 0 560 560" fill="none" aria-hidden="true">
+    <g class="ring" stroke="#262d37" stroke-width="2"><circle cx="280" cy="280" r="260" stroke-dasharray="4 14"/><circle cx="280" cy="280" r="215" stroke-dasharray="60 20"/></g>
+    <path d="M280 90 L420 140 V270 C420 360 360 420 280 460 C200 420 140 360 140 270 V140 Z" stroke="#ffa41b" stroke-width="6" fill="rgba(255,164,27,.08)"/>
+    <path d="M280 90 L420 140 V270 C420 360 360 420 280 460" stroke="#ffa41b" stroke-width="6" stroke-dasharray="14 16" style="animation:dash 2s linear infinite"/>
+    <path d="M225 275 L265 315 L340 230" stroke="#5ee6a8" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+</section>
+
+<!-- ================= 02 PROBLEM ================= -->
+<section class="slide" data-title="Problem">
+  <div class="pad">
+    <div class="eyebrow reveal">Problem</div>
+    <h2 class="reveal">Zmiany w zaporze <em>trudno kontrolować</em></h2>
+    <div class="statements">
+      <div class="statement frag"><span class="n">01</span><p>Kto zmienił regułę? <span>GUI, netsh, GPO, inny skrypt.</span></p></div>
+      <div class="statement frag"><span class="n">02</span><p>Czy ktoś ją wyłączył? <span>Nikt tego nie zauważy.</span></p></div>
+      <div class="statement frag"><span class="n">03</span><p>Blokada na ślepo <span>– i odcinasz sam siebie.</span></p></div>
+      <div class="statement frag"><span class="n">04</span><p>Nowa reguła nie zrywa <span>już otwartej sesji.</span></p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 03 FOUR VERBS ================= -->
+<section class="slide" data-title="Cztery czasowniki">
+  <div class="pad">
+    <div class="eyebrow reveal">Funkcje</div>
+    <h2 class="reveal">Co robi <em>skrypt</em></h2>
+    <div class="cards four">
+      <div class="card frag"><div class="ico">01 / BLOKUJ</div><h3>Porty i adresy</h3><p>Listy, zakresy, IPv4/IPv6, CIDR, ICMP. Profile Domain, Private, Public.</p></div>
+      <div class="card frag"><div class="ico">02 / UTRZYMUJ</div><h3>Stan docelowy</h3><p>Import z JSON, naprawa dryfu, zadanie harmonogramu (SYSTEM) przy zmianie sieci.</p></div>
+      <div class="card frag"><div class="ico">03 / AUDYTUJ</div><h3>Każda zmiana</h3><p>Stan przed i po, użytkownik, wynik. Plik JSONL i dziennik zdarzeń.</p></div>
+      <div class="card frag"><div class="ico">04 / REAGUJ</div><h3>Żywe połączenia</h3><p>Wybierz połączenie z listy, zablokuj je i zerwij sesję.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 04 SAFETY ================= -->
+<section class="slide" data-title="Bezpieczeństwo">
+  <div class="pad">
+    <div class="eyebrow reveal">Bezpieczeństwo</div>
+    <h2 class="reveal">Bezpieczne <em>wprowadzanie zmian</em></h2>
+    <div class="terminal reveal" style="margin-top:44px">
+      <div class="bar"><i></i><i></i><i></i><span>powershell · administrator</span></div>
+<pre style="font-size:30px"><span class="p">PS&gt;</span> .\FirewallManager.ps1 -Action Block -Port 135,139,445 -Direction Inbound -DryRun
+<span class="frag"><span class="bl">[INFO]</span> DryRun: operacja 'Add' na obiekcie 'FWM-Block-In-TCP-2233E7D3' – nic nie zmieniono.
+</span><span class="frag"><span class="p">PS&gt;</span> .\FirewallManager.ps1 -Action Block -Port 3389
+</span><span class="frag"><span class="er">[BŁĄD]</span> Blokada może odciąć dostęp do systemu: port 3389 (RDP). Użyj -Force, aby kontynuować.
+<span class="dim">kod wyjścia 4</span></span></pre>
+    </div>
+    <p class="lead frag" style="margin-top:36px"><b>DryRun</b>, <b>idempotencja</b>, <b>-Force</b> dla krytycznych portów i adresów lokalnych.</p>
+  </div>
+</section>
+
+<!-- ================= 05 ARCHITECTURE ================= -->
+<section class="slide" data-title="Architektura">
+  <div class="pad">
+    <div class="eyebrow reveal">Budowa</div>
+    <h2 class="reveal">Moduły <em>skryptu</em></h2>
+    <div class="arch">
+      <div class="layer frag"><b>Walidacja</b><span>porty 1–65535 · IP / CIDR / zakres · ICMP</span></div>
+      <div class="layer frag"><b>Model reguł</b><span>spec → klucz stanu: idempotencja i dryf</span></div>
+      <div class="layer frag"><b>Operacje</b><span>Add · Modify · Enable · Disable · Remove · Import</span></div>
+      <div class="layer frag"><b>Egzekwowanie</b><span>Enforce · zadanie harmonogramu (SYSTEM) · zmiana profilu sieci</span></div>
+      <div class="layer frag"><b>Połączenia</b><span>lista TCP · kreator · SetTcpEntry</span></div>
+      <div class="layer frag"><b>Historia</b><span>dziennik zapory · zmiany spoza skryptu</span></div>
+      <div class="layer wide frag"><b>Audyt</b><span>Invoke-Audited: ShouldProcess → stan przed → zmiana → stan po → JSONL + Event Log</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 06 SSH HERO ================= -->
+<section class="slide" data-title="Demo: zerwanie SSH" data-steps="1">
+  <div class="pad">
+    <div class="eyebrow reveal">Demo</div>
+    <h2 class="reveal">Zerwanie sesji <em>SSH</em></h2>
+    <div class="vmid">
+    <div class="net" id="sshNet">
+      <div class="node a"><b>TEN KOMPUTER</b><span>192.168.100.4</span></div>
+      <div class="wire"><div class="pkt"></div><div class="pkt"></div><div class="pkt"></div></div>
+      <div class="gate"><span class="lbl">FWM-<br>Conn</span><span class="x">✕</span></div>
+      <div class="node b"><b>SERWER</b><span>192.168.100.89:22</span></div>
+    </div>
+    <div class="status" id="sshStatus"></div>
+    <div style="display:flex; gap:16px; margin-top:34px">
+      <span class="tag ghost">1 · sesja żyje</span>
+      <span class="tag ghost frag">2 · reguła dodana</span>
+      <span class="tag ghost frag">3 · zerwanie</span>
+    </div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 07 SSH TERMINAL ================= -->
+<section class="slide" data-title="Kreator połączeń">
+  <div class="pad">
+    <div class="eyebrow reveal">Połączenia</div>
+    <h2 class="reveal" style="font-size:70px">Blokowanie <em>wybranego połączenia</em></h2>
+    <div class="terminal reveal vmid">
+      <div class="bar"><i></i><i></i><i></i><span>-Action Connections -Interactive -Disconnect</span></div>
+<pre style="font-size:27px; line-height:1.55"><span class="dim">Id Proto Local               Remote               State         PID Process</span>
+<span class="dim"> 7 TCP   192.168.100.4:55335 146.75.117.91:443    Established 20020 msedge</span>
+<span class="er">16 TCP   192.168.100.4:51172 192.168.100.89:22    Established 17624 ssh</span>
+<span class="frag"><span class="p">Numery połączeń:</span> 16   <span class="p">Zakres:</span> 2 (adres + port)
+FWM-Conn-192-168-100-89-22-Out-TCP   Outbound  TCP  22  192.168.100.89
+</span><span class="frag"><span class="ok">[OK]</span> Add : FWM-Conn-192-168-100-89-22-Out-TCP
+<span class="ok">[OK]</span> Disconnect : 192.168.100.4:51172 -&gt; 192.168.100.89:22</span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 08 ENFORCE / DRIFT ================= -->
+<section class="slide" data-title="Dryf konfiguracji">
+  <div class="pad">
+    <div class="eyebrow reveal">Egzekwowanie</div>
+    <h2 class="reveal">Wykrywanie i <em>naprawa zmian</em></h2>
+    <div class="rules" id="driftRules">
+      <div class="rule reveal fixed" id="r1"><div>FWM-CfgSMB-In-TCP<small>wyłączona ręcznie, przywrócona przez Enforce</small></div><div class="switch">Enabled</div></div>
+      <div class="rule reveal" id="r2"><div>FWM-CfgNet-Out-Any<small>203.0.113.1-203.0.113.50 · Outbound · bez zmian</small></div><div class="switch">Enabled</div></div>
+    </div>
+    <div class="terminal frag" style="margin-top:36px">
+      <div class="bar"><i></i><i></i><i></i><span>dryf</span></div>
+<pre style="font-size:28px"><span class="p">PS&gt;</span> Disable-NetFirewallRule -Name FWM-CfgSMB-In-TCP   <span class="dim"># „ktoś” wyłącza</span>
+<span class="frag"><span class="p">PS&gt;</span> .\FirewallManager.ps1 -Action Enforce             <span class="dim"># lub zadanie harmonogramu (SYSTEM)</span></span></pre>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 09 WHO CHANGED ================= -->
+<section class="slide" data-title="Kto zmienił zaporę">
+  <div class="pad">
+    <div class="eyebrow reveal">Historia zmian</div>
+    <h2 class="reveal">Kto zmienił <em>regułę zapory</em></h2>
+    <div class="reveal" style="margin-top:50px">
+      <table>
+        <tr><th>Czas</th><th>Zmiana</th><th>Reguła</th><th>Proces</th><th>Źródło</th></tr>
+        <tr class="frag"><td>19:33:35</td><td>Dodanie</td><td>FWM-ScriptTest-In-TCP</td><td>WmiPrvSE.exe</td><td><span class="tag green">Skrypt</span></td></tr>
+        <tr class="frag hl"><td>19:33:29</td><td>Usunięcie</td><td>FWM-ExtTest</td><td>netsh.exe</td><td><span class="tag">Zewnętrzne</span></td></tr>
+        <tr class="frag hl"><td>19:33:20</td><td>Dodanie</td><td>FWM-ExtTest</td><td>netsh.exe</td><td><span class="tag">Zewnętrzne</span></td></tr>
+      </table>
+    </div>
+    <p class="lead frag" style="margin-top:44px">Zdarzenia z dziennika zapory są porównywane z <b>własnym dziennikiem audytu</b>. Z <b>-Notify</b> ostrzeżenie trafia do dziennika audytu i Dziennika zdarzeń (ID 1100).</p>
+  </div>
+</section>
+
+<!-- ================= 10 AUDIT ================= -->
+<section class="slide" data-title="Audyt">
+  <div class="pad">
+    <div class="eyebrow reveal">Audyt</div>
+    <h2 class="reveal">Zapis <em>każdej zmiany</em></h2>
+    <div class="terminal reveal" style="margin-top:44px">
+      <div class="bar"><i></i><i></i><i></i><span>firewall_20261102.log</span></div>
+<pre style="font-size:27px"><span class="dim">{</span>
+  <span class="k">"Timestamp"</span>: <span class="s">"2026-11-02T19:33:35+01:00"</span>,  <span class="k">"User"</span>: <span class="s">"LAPTOP\\p9bar"</span>,
+  <span class="k">"Operation"</span>: <span class="s">"Enforce"</span>,  <span class="k">"Target"</span>: <span class="s">"FWM-CfgSMB-In-TCP"</span>,
+  <span class="k">"Before"</span>: { <span class="k">"Enabled"</span>: <span class="er">"False"</span>, <span class="k">"LocalPort"</span>: <span class="s">"9999"</span> },
+  <span class="k">"After"</span>:  { <span class="k">"Enabled"</span>: <span class="ok">"True"</span>,  <span class="k">"LocalPort"</span>: <span class="s">"9999"</span> },
+  <span class="k">"Result"</span>: <span class="ok">"Success"</span>
+<span class="dim">}</span></pre>
+    </div>
+    <p class="lead frag" style="margin-top:36px">JSON Lines: rotacja po 5 MB, retencja 30 dni · źródło zdarzeń <b class="mono">FirewallManager</b> w dzienniku Aplikacja.</p>
+  </div>
+</section>
+
+<!-- ================= 11 STATS ================= -->
+<section class="slide" data-title="Liczby">
+  <div class="pad">
+    <div class="eyebrow reveal">Podsumowanie</div>
+    <h2 class="reveal">Skrypt <em>w liczbach</em></h2>
+    <div class="stats vmid">
+      <div class="stat frag"><b>1</b><span>plik .ps1,<br>bez zewnętrznych modułów</span></div>
+      <div class="stat frag"><b>16</b><span>akcji: od Block<br>po Menu</span></div>
+      <div class="stat frag"><b>7</b><span>czytelnych kodów wyjścia (0–6)</span></div>
+      <div class="stat frag"><b>0</b><span>zmian przy -DryRun</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 12 LIMITS ================= -->
+<section class="slide" data-title="Ograniczenia">
+  <div class="pad">
+    <div class="eyebrow reveal">Podsumowanie</div>
+    <h2 class="reveal">Ograniczenia i <em>dalszy rozwój</em></h2>
+    <div class="cards vmid lg" style="grid-template-columns:repeat(3,1fr)">
+      <div class="card frag"><h3>Granice</h3><p>GPO/MDM może nadpisać reguły lokalne. Zerwanie sesji działa tylko dla IPv4 (TCP).</p></div>
+      <div class="card frag"><h3>Testy</h3><p>Walidacja, historia i lista połączeń sprawdzone na żywo. Pozostałe przypadki opisuje TESTING.md.</p></div>
+      <div class="card frag"><h3>Dalej</h3><p>Reguły dla wybranego programu, typ ICMP w Modify, powiadomienia e&#8209;mail i webhook.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- ================= 13 END ================= -->
+<section class="slide title-slide" data-title="Pytania">
+  <div class="pad">
+    <div class="eyebrow reveal">Koniec</div>
+    <h1 class="reveal">Pytania<em>?</em></h1>
+  </div>
+</section>
+
+</main>
+</div>
+
+<div class="deck-controls" id="controls">
+  <button id="prev" title="Wstecz">←</button>
+  <span id="counter">1 / 1</span>
+  <button id="next" title="Dalej">→</button>
+  <span>|</span>
+  <button id="ov" title="Przegląd (O)"><kbd>O</kbd> przegląd</button>
+  <button id="fs" title="Pełny ekran (F)"><kbd>F</kbd> ekran</button>
+</div>
+<div id="overview"></div>
+
+<script>
+/* ===========================================
+   SLIDE PRESENTATION CONTROLLER
+   Keys: arrows/space/PgUp/PgDn, Home/End, O overview, F fullscreen, E edit
+   Fragments: each forward step first reveals the next .frag on the slide.
+   =========================================== */
+class SlidePresentation {
+    constructor() {
+        this.stage = document.getElementById('deckStage');
+        this.slides = [...document.querySelectorAll('.slide')];
+        this.cur = 0;
+        this.scale();
+        addEventListener('resize', () => this.scale());
+        this.keys(); this.touch(); this.wheel(); this.controls(); this.buildOverview();
+        this.show(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
+    }
+    scale() {
+        const f = Math.min(innerWidth / 1920, innerHeight / 1080);
+        this.stage.style.transform = `translate(${(innerWidth - 1920 * f) / 2}px, ${(innerHeight - 1080 * f) / 2}px) scale(${f})`;
+    }
+    frags(i = this.cur) { return this.slides[i].dataset.steps ? [...this.slides[i].querySelectorAll(':scope .frag')] : []; } /* click steps only on slides with data-steps */
+    next() {
+        if (document.getElementById('overview').classList.contains('open')) return;
+        const hidden = this.frags().find(f => !f.classList.contains('shown'));
+        if (hidden) { hidden.classList.add('shown'); this.onFrag(); return; }
+        this.show(this.cur + 1);
+    }
+    prev() {
+        if (document.getElementById('overview').classList.contains('open')) return;
+        const shown = this.frags().filter(f => f.classList.contains('shown'));
+        if (shown.length) { shown.at(-1).classList.remove('shown'); this.onFrag(); return; }
+        this.show(this.cur - 1, true);
+    }
+    show(n, revealAll = false) {
+        this.cur = Math.max(0, Math.min(this.slides.length - 1, n));
+        this.slides.forEach((s, k) => {
+            s.classList.toggle('active', k === this.cur);
+            s.classList.toggle('visible', k === this.cur);
+            if (k !== this.cur) s.querySelectorAll('.frag').forEach(f => f.classList.remove('shown'));
+        });
+        this.frags().forEach(f => f.classList.toggle('shown', revealAll));
+        document.getElementById('progress').style.width = ((this.cur + 1) / this.slides.length * 100) + '%';
+        document.getElementById('counter').textContent = `${this.cur + 1} / ${this.slides.length}`;
+        history.replaceState(null, '', '#' + (this.cur + 1));
+        document.querySelectorAll('#overview .thumb').forEach((t, k) => t.classList.toggle('cur', k === this.cur));
+        this.onFrag();
+    }
+    onFrag() { /* drives the animated slides from the number of revealed steps */
+        const sl = this.slides[this.cur];
+        const shown = Math.min(2, this.frags().filter(f => f.classList.contains('shown')).length);
+        if (sl.querySelector('#sshNet')) setSsh(shown);
+    }
+    keys() {
+        addEventListener('keydown', e => {
+            if (e.target.isContentEditable || e.ctrlKey || e.altKey || e.metaKey) return;
+            if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(e.key)) { e.preventDefault(); this.next(); }
+            else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(e.key)) { e.preventDefault(); this.prev(); }
+            else if (e.key === 'Home') this.show(0);
+            else if (e.key === 'End') this.show(this.slides.length - 1);
+            else if (e.key === 'o' || e.key === 'O') this.toggleOverview();
+            else if (e.key === 'Escape') document.getElementById('overview').classList.remove('open');
+            else if (e.key === 'f' || e.key === 'F') this.fullscreen();
+        });
+    }
+    touch() {
+        let x = null;
+        addEventListener('touchstart', e => { x = e.touches[0].clientX; }, { passive: true });
+        addEventListener('touchend', e => {
+            if (x === null) return;
+            const d = e.changedTouches[0].clientX - x; x = null;
+            if (Math.abs(d) > 50) d < 0 ? this.next() : this.prev();
+        });
+    }
+    wheel() {
+        let lock = false;
+        addEventListener('wheel', e => {
+            if (lock || Math.abs(e.deltaY) < 30) return;
+            lock = true; setTimeout(() => lock = false, 550);
+            e.deltaY > 0 ? this.next() : this.prev();
+        }, { passive: true });
+    }
+    controls() {
+        document.getElementById('prev').onclick = () => this.prev();
+        document.getElementById('next').onclick = () => this.next();
+        document.getElementById('ov').onclick = () => this.toggleOverview();
+        document.getElementById('fs').onclick = () => this.fullscreen();
+        addEventListener('mousemove', () => { document.body.classList.add('show-controls'); clearTimeout(this.ct); this.ct = setTimeout(() => document.body.classList.remove('show-controls'), 2200); });
+    }
+    fullscreen() { document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen(); }
+    buildOverview() {
+        const ov = document.getElementById('overview');
+        ov.innerHTML = ''; /* saved copies already contain the tiles */
+        this.slides.forEach((s, k) => {
+            const t = document.createElement('div'); t.className = 'thumb'; t.tabIndex = 0; t.setAttribute('role', 'button');
+            t.innerHTML = `<b>${String(k + 1).padStart(2, '0')}</b><span>${s.dataset.title || ''}</span>`;
+            t.onclick = () => { this.toggleOverview(); this.show(k); };
+            t.onkeydown = e => { if (e.key === 'Enter') t.onclick(); };
+            ov.appendChild(t);
+        });
+    }
+    toggleOverview() { document.getElementById('overview').classList.toggle('open'); }
+}
+const deck = new SlidePresentation();
+
+/* ===========================================
+   SLIDE-SPECIFIC STATE: driven by how many .frag steps are shown
+   =========================================== */
+function setSsh(step) {
+    const net = document.getElementById('sshNet'), status = document.getElementById('sshStatus');
+    net.className = ['net', 'net armed', 'net armed blocked'][step];
+    status.innerHTML = [
+        '<span class="ok">● sesja SSH aktywna: pakiety płyną</span>',
+        '<span class="p">▲ reguła dodana, ale otwarta sesja jeszcze żyje</span>',
+        '<span class="er">✕ SetTcpEntry → DELETE_TCB: sesja zerwana, nowe połączenia zablokowane</span>'
+    ][step];
+}
+
+/* ===========================================
+   INLINE EDITING (E toggles; Ctrl+S saves a copy)
+   =========================================== */
+(function () {
+    const toggle = document.getElementById('editToggle'), zone = document.querySelector('.edit-hotzone');
+    let on = false, hide;
+    const set = v => {
+        on = v; document.body.classList.toggle('editing', on);
+        document.querySelectorAll('.slide h1,.slide h2,.slide h3,.slide p,.slide td,.slide li,.slide .lead').forEach(el => el.contentEditable = on ? 'true' : 'false');
+    };
+    toggle.onclick = () => set(!on);
+    zone.onmouseenter = () => { clearTimeout(hide); toggle.classList.add('show'); };
+    zone.onmouseleave = () => { hide = setTimeout(() => { if (!on) toggle.classList.remove('show'); }, 400); };
+    toggle.onmouseenter = () => clearTimeout(hide);
+    addEventListener('keydown', e => {
+        if ((e.key === 'e' || e.key === 'E') && !e.target.isContentEditable) set(!on);
+        if (e.ctrlKey && e.key.toLowerCase() === 's' && on) {
+            e.preventDefault(); set(false);
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob(['<!DOCTYPE html>\n' + document.documentElement.outerHTML], { type: 'text/html' }));
+            a.download = 'slides.html'; a.click();
+        }
+    });
+})();
+</script>
+</body>
+</html>

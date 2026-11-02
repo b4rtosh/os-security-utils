@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "name": "NoSMB",
+      "protocol": "TCP",
+      "port": [
+        "135",
+        "139",
+        "445"
+      ],
+      "direction": "Inbound",
+      "profile": [
+        "Public"
+      ]
+    },
+    {
+      "name": "NoRange",
+      "protocol": "Any",
+      "port": [
+        "5000-5100"
+      ],
+      "direction": "Any"
+    },
+    {
+      "name": "BadNet",
+      "remoteAddress": [
+        "203.0.113.1-203.0.113.50",
+        "10.0.0.0/8",
+        "2001:db8::/32"
+      ],
+      "direction": "Any",
+      "profile": [
+        "Public",
+        "Private"
+      ],
+      "enabled": true
+    }
+  ]
+}
