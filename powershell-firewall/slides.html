@@ -242,9 +242,9 @@ button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--amber); ou
 <!-- ================= 01 TITLE ================= -->
 <section class="slide title-slide" data-title="Tytuł">
   <div class="pad">
-    <div class="eyebrow reveal">Projekt · PowerShell · Zapora Windows</div>
+    <div class="eyebrow reveal">PowerShell · Zapora Windows</div>
     <h1 class="reveal">Firewall<br><em>Manager</em><span class="cursor"></span></h1>
-    <p class="sub reveal"><b>Zarządzanie Zaporą Windows w PowerShell:</b><br>blokowanie portów i adresów, naprawa konfiguracji, audyt zmian.</p>
+    <p class="sub reveal"><b>Zarządzanie Zaporą Windows w PowerShell</b><br>Bartosz Piekarczyk, Dawid Radkowski, Gabriel Lakowski, Miłosz Słoniecki</p>
     <div class="meta reveal"><span class="tag">PS 5.1 + 7</span><span class="tag ghost">Windows 10/11 · Server 2016+</span></div>
   </div>
   <svg class="shield reveal" viewBox="0 0 560 560" fill="none" aria-hidden="true">
@@ -255,19 +255,6 @@ button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--amber); ou
   </svg>
 </section>
 
-<!-- ================= 02 PROBLEM ================= -->
-<section class="slide" data-title="Problem">
-  <div class="pad">
-    <div class="eyebrow reveal">Problem</div>
-    <h2 class="reveal">Zmiany w zaporze <em>trudno kontrolować</em></h2>
-    <div class="statements">
-      <div class="statement frag"><span class="n">01</span><p>Kto zmienił regułę? <span>GUI, netsh, GPO, inny skrypt.</span></p></div>
-      <div class="statement frag"><span class="n">02</span><p>Czy ktoś ją wyłączył? <span>Nikt tego nie zauważy.</span></p></div>
-      <div class="statement frag"><span class="n">03</span><p>Blokada na ślepo <span>– i odcinasz sam siebie.</span></p></div>
-      <div class="statement frag"><span class="n">04</span><p>Nowa reguła nie zrywa <span>już otwartej sesji.</span></p></div>
-    </div>
-  </div>
-</section>
 
 <!-- ================= 03 FOUR VERBS ================= -->
 <section class="slide" data-title="Cztery czasowniki">
@@ -310,9 +297,9 @@ button:focus-visible, .thumb:focus-visible { outline: 2px solid var(--amber); ou
       <div class="layer frag"><b>Model reguł</b><span>spec → klucz stanu: idempotencja i dryf</span></div>
       <div class="layer frag"><b>Operacje</b><span>Add · Modify · Enable · Disable · Remove · Import</span></div>
       <div class="layer frag"><b>Egzekwowanie</b><span>Enforce · zadanie harmonogramu (SYSTEM) · zmiana profilu sieci</span></div>
-      <div class="layer frag"><b>Połączenia</b><span>lista TCP · kreator · SetTcpEntry</span></div>
+      <div class="layer frag"><b>Połączenia</b><span>lista TCP · kreator</span></div>
       <div class="layer frag"><b>Historia</b><span>dziennik zapory · zmiany spoza skryptu</span></div>
-      <div class="layer wide frag"><b>Audyt</b><span>Invoke-Audited: ShouldProcess → stan przed → zmiana → stan po → JSONL + Event Log</span></div>
+      <div class="layer wide frag"><b>Audyt</b><span>ShouldProcess → stan przed → zmiana → stan po → JSONL + Event Log</span></div>
     </div>
   </div>
 </section>
@@ -414,7 +401,7 @@ FWM-Conn-192-168-100-89-22-Out-TCP   Outbound  TCP  22  192.168.100.89
 <section class="slide" data-title="Liczby">
   <div class="pad">
     <div class="eyebrow reveal">Podsumowanie</div>
-    <h2 class="reveal">Skrypt <em>w liczbach</em></h2>
+    <h2 class="reveal">Statystyki <em>skryptu</em></h2>
     <div class="stats vmid">
       <div class="stat frag"><b>1</b><span>plik .ps1,<br>bez zewnętrznych modułów</span></div>
       <div class="stat frag"><b>16</b><span>akcji: od Block<br>po Menu</span></div>
@@ -430,9 +417,9 @@ FWM-Conn-192-168-100-89-22-Out-TCP   Outbound  TCP  22  192.168.100.89
     <div class="eyebrow reveal">Podsumowanie</div>
     <h2 class="reveal">Ograniczenia i <em>dalszy rozwój</em></h2>
     <div class="cards vmid lg" style="grid-template-columns:repeat(3,1fr)">
-      <div class="card frag"><h3>Granice</h3><p>GPO/MDM może nadpisać reguły lokalne. Zerwanie sesji działa tylko dla IPv4 (TCP).</p></div>
-      <div class="card frag"><h3>Testy</h3><p>Walidacja, historia i lista połączeń sprawdzone na żywo. Pozostałe przypadki opisuje TESTING.md.</p></div>
-      <div class="card frag"><h3>Dalej</h3><p>Reguły dla wybranego programu, typ ICMP w Modify, powiadomienia e&#8209;mail i webhook.</p></div>
+      <div class="card frag"><h3>Limitacje</h3><p>Zerwanie sesji działa tylko dla IPv4 (TCP). Brak reguł otwarto-tekstowych (z LLM).</p></div>
+      <div class="card frag"><h3>Testy</h3><p>Walidacja, historia, skuteczność i lista połączeń sprawdzone na żywo.</p></div>
+      <div class="card frag"><h3>Dalej</h3><p>Reguły dla wybranego programu, powiadomienia e&#8209;mail i webhook.</p></div>
     </div>
   </div>
 </section>
